@@ -1,0 +1,359 @@
+---
+title: "WGS_Processing_Sage_7_10_2023"
+author: "Jared Hendrickson"
+date: "2023-07-10"
+output: html_document
+params:
+  synapseusername: "***"
+  synapsepassword: "***"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+# inconsistent packages builds with R version build
+
+library(synapser)
+library(tidyverse)
+library(assertive)
+library(renv)
+
+synLogin(params$synapseusername, params$synapsepassword)
+
+# ensure randomization remains the same for each run execution for sampling
+set.seed(10)
+
+```
+
+```{r find directory level information}
+
+findLevel <- function(synID) {
+  
+  filesAndFolders <-
+    synGetChildren(synID, includeTypes = c("file", "folder"))
+  
+  filesAndFoldersList <- as.list(filesAndFolders)
+  
+  storedName <- NULL
+  storedID <- NULL
+  
+  for (i in 1:length(filesAndFoldersList)) {
+    storedName <- c(storedName, filesAndFoldersList[[i]]$name)
+    storedID <- c(storedID, filesAndFoldersList[[i]]$id)
+  }
+  
+  records <- data.frame(storedName, storedID)
+  
+  return(records)
+}
+
+```
+
+```{r test loading directories }
+
+# WGS Genomic Variants Directory
+topLevel <-  'syn26243168'
+
+topLevelDirectory <- findLevel(topLevel)
+
+MSBBCohortSynID <- topLevelDirectory %>% 
+  filter(storedName == "MSBB") %>% 
+  pull(storedID)
+
+MayoCohortSynID <- topLevelDirectory %>% 
+  filter(storedName == "Mayo") %>% 
+  pull(storedID)
+
+ROSMAPCohortSynID <- topLevelDirectory %>% 
+  filter(storedName == "ROSMAP") %>% 
+  pull(storedID)
+
+```
+
+```{r check individual cohorts MSBB}
+
+topLevelMSBB <- findLevel(MSBBCohortSynID) %>%
+  pull(storedID)
+
+fastqs <- findLevel(topLevelMSBB)
+
+fastqsWithAnnotations <- fastqs %>%
+  mutate(specimenID = sapply(storedID, function(x) synGetAnnotations(x)$specimenID))
+
+# note: multiple lanes for each R1/R2 fastq.gz
+# we can run a lot more checks
+# varying number of lanes per R1/R2 specimenID
+# Did they drop some lanes?
+
+write.csv(fastqsWithAnnotations, "fastqsWithAnnotationsMSBB.csv", row.names = FALSE)
+
+```
+```{r sanity checks MSBB}
+
+fastqsWithAnnotationsMSBB <- read.csv("fastqsWithAnnotationsMSBB.csv", stringsAsFactors = FALSE) %>% mutate(filenameSpecimenID = sapply(storedName, function(x) (str_split(x, "_") %>% unlist())[1]) %>% as.integer())
+
+stopifnot(
+  identical(fastqsWithAnnotationsMSBB$specimenID, fastqsWithAnnotationsMSBB$filenameSpecimenID)
+)
+
+# check with Will on additional failure possibilities
+
+```
+
+```{r check individual cohorts Mayo}
+
+topLevelMayo <- findLevel(MayoCohortSynID) %>%
+  pull(storedID)
+
+fastqs <- findLevel(topLevelMayo)
+
+fastqsWithAnnotations <- fastqs %>%
+  mutate(specimenID = sapply(storedID, function(x) synGetAnnotations(x)$specimenID))
+
+write.csv(fastqsWithAnnotations, "fastqsWithAnnotationsMayo.csv", row.names = FALSE)
+
+```
+
+```{r sanity checks Mayo}
+
+fastqsWithAnnotationsMayo <- read.csv("fastqsWithAnnotationsMayo.csv", stringsAsFactors = FALSE) %>% mutate(filenameSpecimenID = sapply(storedName, function(x) (str_split(x, "_") %>% unlist())[1]) %>% as.integer())
+
+stopifnot(
+  identical(fastqsWithAnnotationsMayo$specimenID, fastqsWithAnnotationsMayo$filenameSpecimenID)
+)
+
+# check with Will on additional failure possibilities
+
+```
+
+```{r check individual cohorts ROSMAP}
+
+topLevelROSMAP <- findLevel(ROSMAPCohortSynID) %>%
+  pull(storedID)
+
+fastqs1 <- findLevel(topLevelROSMAP[1])
+fastqs2 <- findLevel(topLevelROSMAP[2])
+
+fastqs <- rbind(fastqs1, fastqs2)
+
+fastqsWithAnnotations <- fastqs %>%
+  mutate(specimenID = sapply(storedID, function(x) synGetAnnotations(x)$specimenID))
+
+write.csv(fastqsWithAnnotations, "fastqsWithAnnotationsROSMAP.csv", row.names = FALSE)
+
+```
+
+```{r sanity checks Mayo}
+
+# be cautious of below code/failure/could be functionalized more
+
+fastqsWithAnnotationsROSMAP <- read.csv("fastqsWithAnnotationsROSMAP.csv", stringsAsFactors = FALSE) %>% mutate(filenameSpecimenID = sapply(storedName, function(x) (str_split(x, "_") %>% unlist())[1]))
+
+# fastqsWithAnnotationsROSMAP$filenameSpecimenID <- fastqsWithAnnotationsROSMAP$filenameSpecimenID %>%
+#   as.integer()
+# 
+# fastqsWithAnnotationsROSMAP$specimenID <- fastqsWithAnnotationsROSMAP$specimenID %>%
+#   as.integer()
+# 
+# NA_indices <- which(is.na(fastqsWithAnnotationsROSMAP$specimenID)) %>%
+#   length()
+# 
+# fastqsWithAnnotationsROSMAP$specimenID %>%
+#   length()
+
+stopifnot(
+  identical(fastqsWithAnnotationsROSMAP$specimenID, fastqsWithAnnotationsROSMAP$filenameSpecimenID)
+)
+
+# check with Will on additional failure possibilities
+
+which(fastqsWithAnnotationsROSMAP$specimenID != fastqsWithAnnotationsROSMAP$filenameSpecimenID)
+
+which(fastqsWithAnnotationsROSMAP$specimenID == fastqsWithAnnotationsROSMAP$filenameSpecimenID) %>% length()
+
+nrow(fastqsWithAnnotationsROSMAP)
+
+# verified with Will
+
+#!/usr/bin/env python
+
+# import pandas as pd
+# 
+# df = pd.read_csv('fastqsWithAnnotationsROSMAP.csv')
+# 
+# df['file_specimen'] = df['storedName'].str.split('_').str[0]
+# 
+# df['file_specimen'].equals(df['specimenID'])
+
+```
+
+```{r 100 random samples MSBB }
+
+specimenIDs100RandomMSBB <- sample(fastqsWithAnnotationsMSBB$specimenID %>%
+  unique(), 100)
+
+samplesheet100RandomMSBB <- fastqsWithAnnotationsMSBB %>%
+  filter(specimenID %in% specimenIDs100RandomMSBB)
+
+fastq_1 <- samplesheet100RandomMSBB %>%
+  filter(str_detect(storedName, "R1")) %>%
+  mutate(storedName = sapply(storedName, function(x) str_remove_all(x, '.R1.fastq.gz'))) %>%
+  select(specimenID, fastq_1 = storedID, storedName)
+
+fastq_2 <- samplesheet100RandomMSBB %>%
+  filter(str_detect(storedName, "R2")) %>%
+  mutate(storedName = sapply(storedName, function(x) str_remove_all(x, '.R2.fastq.gz'))) %>%
+  select(specimenID, storedID, fastq_2 = storedID, storedName)
+
+samplesheet <- inner_join(fastq_1, fastq_2, by = c("specimenID", "storedName"))
+
+samplesheet = samplesheet %>%
+  mutate(fastq_1 = sapply(fastq_1, function(x) paste0("syn://", x)), fastq_2 = sapply(fastq_2, function(x) paste0("syn://", x)), strandedness = "auto") %>%
+  rename(sample = specimenID) %>%
+  select(-storedName)
+
+write.csv(samplesheet, "MSBBSampleSheet100Random.csv", row.names = FALSE)
+
+```
+
+```{r all samples MSBB }
+
+fastq_1 <- fastqsWithAnnotationsMSBB %>%
+  filter(str_detect(storedName, "R1")) %>%
+  mutate(storedName = sapply(storedName, function(x) str_remove_all(x, '.R1.fastq.gz'))) %>%
+  select(specimenID, fastq_1 = storedID, storedName)
+
+fastq_2 <- fastqsWithAnnotationsMSBB %>%
+  filter(str_detect(storedName, "R2")) %>%
+  mutate(storedName = sapply(storedName, function(x) str_remove_all(x, '.R2.fastq.gz'))) %>%
+  select(specimenID, storedID, fastq_2 = storedID, storedName)
+
+samplesheet <- inner_join(fastq_1, fastq_2, by = c("specimenID", "storedName"))
+
+samplesheet = samplesheet %>%
+  mutate(fastq_1 = sapply(fastq_1, function(x) paste0("syn://", x)), fastq_2 = sapply(fastq_2, function(x) paste0("syn://", x)), strandedness = "auto") %>%
+  rename(sample = specimenID) %>%
+  select(-storedName)
+
+write.csv(samplesheet, "MSBBSampleSheetAll.csv", row.names = FALSE)
+
+# can lanes be non-sequential?
+
+```
+
+```{r 100 random samples Mayo }
+
+specimenIDs100RandomMayo <- sample(fastqsWithAnnotationsMayo$specimenID %>%
+  unique(), 100)
+
+samplesheet100RandomMayo <- fastqsWithAnnotationsMayo %>%
+  filter(specimenID %in% specimenIDs100RandomMayo)
+
+fastq_1 <- samplesheet100RandomMayo %>%
+  filter(str_detect(storedName, "R1")) %>%
+  mutate(storedName = sapply(storedName, function(x) str_remove_all(x, '.R1.fastq.gz'))) %>%
+  select(specimenID, fastq_1 = storedID, storedName)
+
+fastq_2 <- samplesheet100RandomMayo %>%
+  filter(str_detect(storedName, "R2")) %>%
+  mutate(storedName = sapply(storedName, function(x) str_remove_all(x, '.R2.fastq.gz'))) %>%
+  select(specimenID, storedID, storedName) %>%
+  select(fastq_2 = storedID, storedName)
+
+samplesheet <- inner_join(fastq_1, fastq_2, by = c("storedName"))
+
+samplesheet = samplesheet %>%
+  mutate(fastq_1 = sapply(fastq_1, function(x) paste0("syn://", x)), fastq_2 = sapply(fastq_2, function(x) paste0("syn://", x)), strandedness = "auto") %>%
+  rename(sample = specimenID) %>%
+  select(-storedName)
+
+write.csv(samplesheet, "MayoSamplesheet100Random.csv", row.names = FALSE)
+
+```
+
+```{r all samples Mayo }
+
+fastq_1 <- fastqsWithAnnotationsMayo %>%
+  filter(str_detect(storedName, "R1")) %>%
+  mutate(storedName = sapply(storedName, function(x) str_remove_all(x, '.R1.fastq.gz'))) %>%
+  select(specimenID, fastq_1 = storedID, storedName)
+
+fastq_2 <- fastqsWithAnnotationsMayo %>%
+  filter(str_detect(storedName, "R2")) %>%
+  mutate(storedName = sapply(storedName, function(x) str_remove_all(x, '.R2.fastq.gz'))) %>%
+  select(specimenID, storedID, storedName) %>%
+  select(fastq_2 = storedID, storedName)
+
+samplesheet <- inner_join(fastq_1, fastq_2, by = c("storedName"))
+
+samplesheet = samplesheet %>%
+  mutate(fastq_1 = sapply(fastq_1, function(x) paste0("syn://", x)), fastq_2 = sapply(fastq_2, function(x) paste0("syn://", x)), strandedness = "auto") %>%
+  rename(sample = specimenID) %>%
+  select(-storedName)
+
+write.csv(samplesheet, "MayoSamplesheetAll.csv", row.names = FALSE)
+
+```
+
+```{r 100 random samples ROSMAP }
+
+specimenIDs100RandomROSMAP <- sample(fastqsWithAnnotationsROSMAP$specimenID %>%
+  unique(), 100)
+
+samplesheet100RandomROSMAP <- fastqsWithAnnotationsROSMAP %>%
+  filter(specimenID %in% specimenIDs100RandomROSMAP)
+
+fastq_1 <- samplesheet100RandomROSMAP %>%
+  filter(str_detect(storedName, 'R1.fastq.gz')) %>%
+  select(specimenID, fastq_1 = storedID, storedName)
+
+fastq_1$extensionRemoved <- fastq_1$storedName %>%
+  str_remove_all('.R1.fastq.gz')
+
+fastq_2 <- samplesheet100RandomROSMAP %>%
+  filter(str_detect(storedName, 'R2.fastq.gz')) %>%
+  select(specimenID, fastq_2 = storedID, storedName)
+
+fastq_2$extensionRemoved <- fastq_2$storedName %>%
+  str_remove_all('.R2.fastq.gz')
+
+samplesheet <- inner_join(fastq_1 %>% select(-storedName), fastq_2 %>% select(-storedName), by = c("extensionRemoved", 'specimenID'))
+
+samplesheet = samplesheet %>%
+  mutate(fastq_1 = sapply(fastq_1, function(x) paste0("syn://", x)), fastq_2 = sapply(fastq_2, function(x) paste0("syn://", x)), strandedness = "auto") %>%
+  rename(sample = specimenID) %>%
+  select(-extensionRemoved)
+
+write.csv(samplesheet, "ROSMAPSamplesheet100Random.csv", row.names = FALSE)
+
+```
+
+```{r all samples ROSMAP }
+
+fastq_1 <- fastqsWithAnnotationsROSMAP %>%
+  filter(str_detect(storedName, 'R1.fastq.gz')) %>%
+  select(specimenID, fastq_1 = storedID, storedName)
+
+fastq_1$extensionRemoved <- fastq_1$storedName %>%
+  str_remove_all('.R1.fastq.gz')
+
+fastq_2 <- fastqsWithAnnotationsROSMAP %>%
+  filter(str_detect(storedName, 'R2.fastq.gz')) %>%
+  select(specimenID, fastq_2 = storedID, storedName)
+
+fastq_2$extensionRemoved <- fastq_2$storedName %>%
+  str_remove_all('.R2.fastq.gz')
+
+samplesheet <- inner_join(fastq_1 %>% select(-storedName), fastq_2 %>% select(-storedName), by = c("extensionRemoved", 'specimenID'))
+
+samplesheet = samplesheet %>%
+  mutate(fastq_1 = sapply(fastq_1, function(x) paste0("syn://", x)), fastq_2 = sapply(fastq_2, function(x) paste0("syn://", x)), strandedness = "auto") %>%
+  rename(sample = specimenID) %>%
+  select(-extensionRemoved)
+
+write.csv(samplesheet, "ROSMAPSamplesheetAll.csv", row.names = FALSE)
+
+```
